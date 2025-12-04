@@ -82,18 +82,13 @@ export const VoiceProvider = ({ children }) => {
   const processCommand = (cmd) => {
     const matches = (keywords) => keywords.some(k => cmd.includes(k));
 
-    // 1. CAMERA ACTIVATION COMMANDS (The feature you requested)
-    // Keywords: "start camera", "describe my surrounding", "turn on camera"
+    // 1. CAMERA ACTIVATION COMMANDS
     if (matches(['start camera', 'turn on camera', 'describe my surrounding', 'describe surrounding', 'what is around me'])) {
-        
         if (location.pathname.includes('vision')) {
-            // Already on vision page? Just trigger the start event.
             window.dispatchEvent(new CustomEvent('voice-start-camera'));
         } else {
-            // Not on vision page? Go there, then trigger it.
             speak("Opening Vision to describe surroundings.");
             navigate('/dashboard/vision');
-            // Wait 1.5s for page to load, then start camera automatically
             setTimeout(() => window.dispatchEvent(new CustomEvent('voice-start-camera')), 1500);
         }
         return; 
@@ -104,24 +99,52 @@ export const VoiceProvider = ({ children }) => {
         if (location.pathname.includes('vision')) {
             window.dispatchEvent(new CustomEvent('voice-stop-camera'));
         }
+        return;
     }
 
-    // 3. CAPTURE/SINGLE DESCRIBE (If camera is already running)
-    else if (matches(['capture', 'take photo', 'what is this']) && location.pathname.includes('vision')) {
+    // 3. CALIBRATION COMMANDS
+    if (matches(['calibrate', 'calibration', 'set distance', 'start calibrate'])) {
+        if (location.pathname.includes('vision')) {
+            window.dispatchEvent(new CustomEvent('voice-start-calibration'));
+            speak("Calibration mode activated. Please enter the distance.");
+        } else {
+            speak("Opening Vision for calibration.");
+            navigate('/dashboard/vision');
+            setTimeout(() => window.dispatchEvent(new CustomEvent('voice-start-calibration')), 1500);
+        }
+        return;
+    }
+
+    // 4. Q&A COMMANDS
+    if (matches(['ask', 'question', 'what is', 'tell me about', 'describe', 'ask ai'])) {
+        if (location.pathname.includes('vision')) {
+            window.dispatchEvent(new CustomEvent('voice-start-qa'));
+            speak("Q&A mode activated. Please ask your question.");
+        } else {
+            speak("Opening Vision for question answering.");
+            navigate('/dashboard/vision');
+            setTimeout(() => window.dispatchEvent(new CustomEvent('voice-start-qa')), 1500);
+        }
+        return;
+    }
+
+    // 5. CAPTURE/SINGLE DESCRIBE
+    else if (matches(['capture', 'take photo', 'snap', 'analyze']) && location.pathname.includes('vision')) {
         window.dispatchEvent(new CustomEvent('voice-capture'));
+        return;
     }
 
-    // 4. NAVIGATION
-    else if (matches(['vision', 'live see'])) navigate('/dashboard/vision');
-    else if (matches(['read', 'ocr', 'text'])) navigate('/dashboard/ocr');
-    else if (matches(['chat', 'bot'])) navigate('/dashboard/chat');
-    else if (matches(['setting'])) navigate('/dashboard/settings');
+    // 6. NAVIGATION
+    if (matches(['vision', 'live see', 'camera'])) navigate('/dashboard/vision');
+    else if (matches(['read', 'ocr', 'text', 'smart reader'])) navigate('/dashboard/ocr');
+    else if (matches(['chat', 'bot', 'voice chat'])) navigate('/dashboard/chat');
+    else if (matches(['setting', 'settings'])) navigate('/dashboard/settings');
     else if (matches(['demo'])) navigate('/dashboard/demopurpose');
-    else if (matches(['exit', 'logout'])) navigate('/');
-    else if (matches(['enter', 'dashboard', 'app'])) navigate('/dashboard');
+    else if (matches(['exit', 'logout', 'goodbye'])) navigate('/');
+    else if (matches(['enter', 'dashboard', 'app', 'home'])) navigate('/dashboard');
     
-    // 5. SOS
-    else if (matches(['sos', 'help', 'emergency'])) {
+    // 7. SOS
+    else if (matches(['sos', 'help', 'emergency', 'urgent'])) {
       speak("Triggering Emergency Alert!");
       toast.error("SOS ALERT TRIGGERED");
     }

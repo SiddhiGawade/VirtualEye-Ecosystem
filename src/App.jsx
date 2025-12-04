@@ -8,6 +8,7 @@ import LandingPage from './pages/LandingPage';
 import DashboardLayout from './components/layout/DashboardLayout';
 import DashboardHome from './pages/DashboardHome';
 import VisionPage from './pages/VisionPage';
+import OCRPage from './pages/OCRPage';
 import Demo from './pages/Demo';
 
 // Styles
@@ -27,10 +28,10 @@ function AppContent() {
         <Route path="/dashboard" element={<DashboardLayout />}>
           <Route index element={<DashboardHome />} />
           <Route path="vision" element={<VisionPage />} />
+          <Route path="ocr" element={<OCRPage />} />
           <Route path="demopurpose" element={<Demo />} />
           
           {/* Add these later */}
-          <Route path="ocr" element={<div className="p-10">OCR Feature Coming Soon</div>} />
           <Route path="settings" element={<div className="p-10">Settings Coming Soon</div>} />
         </Route>
       </Routes>
