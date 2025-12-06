@@ -6,7 +6,19 @@ import toast from 'react-hot-toast';
 import './VisionPage.css';
 
 // Backend API URL - supports both local Flask and ngrok
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'; 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+// Helper to add ngrok bypass header
+const getFetchOptions = (options = {}) => {
+  const isNgrok = API_BASE_URL.includes('ngrok');
+  return {
+    ...options,
+    headers: {
+      'ngrok-skip-browser-warning': 'true',  // Bypass ngrok warning page
+      ...options.headers,
+    },
+  };
+}; 
 
 const VisionPage = () => {
   const { speak } = useVoice();
@@ -33,21 +45,30 @@ const VisionPage = () => {
   const canvasRef = useRef(null);
   const latestTTS = useRef(null);
   const lastFrameRef = useRef(null);
+  const speechMuteUntil = useRef(0); // suppress speech while answering questions
+
+  const isSpeechMuted = () => Date.now() < speechMuteUntil.current;
+  const muteSpeechFor = (ms) => { speechMuteUntil.current = Date.now() + ms; };
 
   // Check calibration status and backend health on mount
   useEffect(() => {
     const checkCalibration = async () => {
       try {
         // First check if backend is running
-        const healthRes = await fetch(`${API_BASE_URL}/health`);
+        const healthRes = await fetch(`${API_BASE_URL}/health`, getFetchOptions());
         if (!healthRes.ok) {
           console.warn('Backend server not responding');
-          toast.error('Backend server not running. Start it with: python server_lite.py');
+          const isNgrok = API_BASE_URL.includes('ngrok');
+          if (isNgrok) {
+            toast.error('Cannot reach Colab backend. Make sure the server is running in Colab.');
+          } else {
+            toast.error('Cannot reach backend. Make sure it\'s running on localhost:5000 or set VITE_API_URL in .env');
+          }
           return;
         }
         
         // Then check calibration
-        const res = await fetch(`${API_BASE_URL}/get_calib_K`);
+        const res = await fetch(`${API_BASE_URL}/get_calib_K`, getFetchOptions());
         const data = await res.json();
         if (data.K) {
           setIsCalibrated(true);
@@ -178,10 +199,10 @@ const VisionPage = () => {
       formData.append('frame', blob, 'frame.jpg');
       formData.append('lang', lang);
 
-      const response = await fetch(`${API_BASE_URL}/analyze_frame`, {
+      const response = await fetch(`${API_BASE_URL}/analyze_frame`, getFetchOptions({
         method: 'POST',
         body: formData,
-      });
+      }));
 
       if (!response.ok) throw new Error("Network error");
       
@@ -191,7 +212,7 @@ const VisionPage = () => {
         if (data.detections && data.detections.length > 0) {
           setDetections(data.detections);
           // Only speak detections if NOT in Q&A mode (to keep it quiet during Q&A)
-          if (!qaInProgress) {
+          if (!qaInProgress && !qaMode && !isSpeechMuted()) {
             const objSummary = data.detections
               .map(d => `${d.class} on your ${d.side}, ${d.distance_str} away`)
               .join('. ');
@@ -221,8 +242,22 @@ const VisionPage = () => {
         if (caption) {
           setCurrentDescription(caption);
           // Only speak caption if NOT in Q&A mode (to keep it quiet during Q&A)
-          if (!qaInProgress && (!data.detections || data.detections.length === 0)) {
+          if (!qaInProgress && !qaMode && !isSpeechMuted() && (!data.detections || data.detections.length === 0)) {
             speak(caption);
+          }
+        }
+
+        // Handle wall alerts with 3-second cooldown (handled by backend)
+        if (data.wall_alert && !qaInProgress && !qaMode && !isSpeechMuted()) {
+          const wallMsg = data.wall_alert.message;
+          if (data.wall_alert.urgent) {
+            // Urgent wall alert - speak immediately and show toast
+            speak(wallMsg);
+            toast.error(wallMsg, { duration: 5000 });
+          } else {
+            // Regular wall alert
+            speak(wallMsg);
+            toast(wallMsg, { icon: '⚠️', duration: 3000 });
           }
         }
 
@@ -265,10 +300,10 @@ const VisionPage = () => {
       formData.append('frame', blob);
       formData.append('distance_m', parseFloat(calibrationDistance));
 
-      const response = await fetch(`${API_BASE_URL}/calibrate`, {
+      const response = await fetch(`${API_BASE_URL}/calibrate`, getFetchOptions({
         method: 'POST',
         body: formData,
-      });
+      }));
 
       const data = await response.json();
       if (response.ok) {
@@ -296,6 +331,7 @@ const VisionPage = () => {
 
     // Pause periodic analysis and mark QA in progress
     setQaInProgress(true);
+    muteSpeechFor(6000); // keep quiet during and shortly after the answer
     toast.dismiss();
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -314,10 +350,10 @@ const VisionPage = () => {
       formData.append('frame', blob);
       formData.append('question', qaQuestion);
 
-      const response = await fetch(`${API_BASE_URL}/question`, {
+      const response = await fetch(`${API_BASE_URL}/question`, getFetchOptions({
         method: 'POST',
         body: formData,
-      });
+      }));
 
       const data = await response.json();
       if (response.ok) {

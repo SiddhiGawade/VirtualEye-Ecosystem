@@ -134,6 +134,17 @@ export const VoiceProvider = ({ children }) => {
         return;
     }
 
+    // 5b. OCR COMMANDS
+    if (matches(['read text', 'extract text', 'read', 'scan text', 'ocr']) && location.pathname.includes('ocr')) {
+        window.dispatchEvent(new CustomEvent('voice-read-text'));
+        return;
+    }
+    
+    if (matches(['auto read', 'continuous read', 'start auto read', 'auto scan']) && location.pathname.includes('ocr')) {
+        window.dispatchEvent(new CustomEvent('voice-auto-read'));
+        return;
+    }
+
     // 6. NAVIGATION
     if (matches(['vision', 'live see', 'camera'])) navigate('/dashboard/vision');
     else if (matches(['read', 'ocr', 'text', 'smart reader'])) navigate('/dashboard/ocr');
