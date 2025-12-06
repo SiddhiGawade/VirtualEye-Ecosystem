@@ -1,9 +1,0 @@
-.env
-backend/venv/
-backend/__pycache__/
-backend/*.pyc
-backend/calib_K.json
-backend/*.pt
-backend/models/
-node_modules/
-dist/
