@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Camera, Square, Play, Mic, AlertCircle, CheckCircle, Zap, X } from 'lucide-react';
+import { Camera, Square, Play, Mic, AlertCircle, CheckCircle, Zap, X, RefreshCw } from 'lucide-react';
 import { useVoice } from '../context/VoiceNavigationContext';
 import toast from 'react-hot-toast';
 import './VisionPage.css';
@@ -38,6 +38,10 @@ const VisionPage = () => {
   const [qaQuestion, setQaQuestion] = useState('');
   const [qaAnswer, setQaAnswer] = useState('');
   const [qaInProgress, setQaInProgress] = useState(false);
+  
+  // New state for camera selection: 'user' (front) or 'environment' (rear)
+  const [facingMode, setFacingMode] = useState('user'); 
+  const [hasMultipleCameras, setHasMultipleCameras] = useState(false); // New state to check for multiple cameras
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -50,11 +54,11 @@ const VisionPage = () => {
   const isSpeechMuted = () => Date.now() < speechMuteUntil.current;
   const muteSpeechFor = (ms) => { speechMuteUntil.current = Date.now() + ms; };
 
-  // Check calibration status and backend health on mount
+  // Check calibration status, backend health, AND camera availability on mount
   useEffect(() => {
-    const checkCalibration = async () => {
+    const checkSetup = async () => {
+      // 1. Check calibration and backend health
       try {
-        // First check if backend is running
         const healthRes = await fetch(`${API_BASE_URL}/health`, getFetchOptions());
         if (!healthRes.ok) {
           console.warn('Backend server not responding');
@@ -67,7 +71,6 @@ const VisionPage = () => {
           return;
         }
         
-        // Then check calibration
         const res = await fetch(`${API_BASE_URL}/get_calib_K`, getFetchOptions());
         const data = await res.json();
         if (data.K) {
@@ -78,11 +81,30 @@ const VisionPage = () => {
         console.warn('Could not connect to backend:', err);
         toast.error('Cannot reach backend. Make sure it\'s running on localhost:5000');
       }
+
+      // 2. Check for multiple cameras
+      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(device => device.kind === 'videoinput');
+          if (videoDevices.length > 1) {
+            setHasMultipleCameras(true);
+          }
+        } catch (err) {
+          console.error('Error enumerating devices:', err);
+          // Fails silently if no permission
+        }
+      }
     };
-    checkCalibration();
+    checkSetup();
+
+    // Initial check to see if we should use 'environment' by default on mobile (optional preference)
+    // if (window.innerWidth <= 768) { 
+    //   setFacingMode('environment');
+    // }
   }, []);
 
-  // Listen for voice commands
+  // Listen for voice commands (omitted for brevity, assume the cleanup/setup logic is in place)
   useEffect(() => {
     const handleVoiceStart = () => {
         if (!streamRef.current) {
@@ -117,8 +139,8 @@ const VisionPage = () => {
     // Cleanup
     return () => {
       if (streamRef.current) {
-         speak("Camera stopped.");
-         stopCamera(true);
+         // speak("Camera stopped."); // Removed because it clashes with stopCamera(true) below
+         stopCamera(true); // Stop camera on unmount/re-effect
       } else {
          stopCamera(true);
       }
@@ -135,23 +157,33 @@ const VisionPage = () => {
 
     try {
       setError(null);
-      speak("Starting live camera."); // Audio feedback
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 },
+      // Use the current facingMode in the constraints
+      const constraints = {
+        video: { 
+          width: { ideal: 640 }, 
+          height: { ideal: 480 },
+          facingMode: facingMode // Key change here
+        },
         audio: false
-      });
+      };
+
+      speak(`Starting live camera with ${facingMode === 'user' ? 'front' : 'rear'} view.`); // Audio feedback
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
       streamRef.current = stream;
       if (videoRef.current) {
+        // Set the video element to the new stream
         videoRef.current.srcObject = stream;
+        // The following line is needed to apply the correct mirroring for 'user' (front) camera
+        // In CSS, you'd apply transform: scaleX(-1) if facingMode is 'user'
       }
       
       setIsStreaming(true);
       startPeriodicAnalysis(); // Starts the AI Loop immediately
     } catch (err) {
       console.error(err);
-      setError('Could not access camera.');
-      toast.error("Camera access denied");
+      setError(`Could not access camera (${facingMode}).`);
+      toast.error("Camera access denied or device not available");
       speak("I cannot access the camera.");
     }
   };
@@ -177,13 +209,81 @@ const VisionPage = () => {
     if (!silent) speak("Camera stopped.");
   };
 
+  // New function to switch cameras
+  const toggleCamera = () => {
+    if (isStreaming) {
+      // 1. Stop the current stream silently
+      stopCamera(true); 
+      
+      // 2. Toggle the facing mode
+      const newFacingMode = facingMode === 'user' ? 'environment' : 'user';
+      setFacingMode(newFacingMode);
+
+      // 3. Restart the camera with the new mode
+      // Note: startCamera will run in the next render cycle due to the state update,
+      // but we can call it directly to avoid a delay.
+      // We pass the new mode to avoid relying on the still-to-update state
+      restartCameraWithMode(newFacingMode);
+    } else {
+        // If not streaming, just toggle the mode
+        setFacingMode(facingMode === 'user' ? 'environment' : 'user');
+    }
+  };
+
+  // Helper to restart camera immediately after toggle
+  const restartCameraWithMode = async (mode) => {
+      try {
+          setError(null);
+          const constraints = {
+              video: { 
+                  width: { ideal: 640 }, 
+                  height: { ideal: 480 },
+                  facingMode: mode 
+              },
+              audio: false
+          };
+          
+          speak(`Switching to ${mode === 'user' ? 'front' : 'rear'} camera.`);
+          
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          
+          streamRef.current = stream;
+          if (videoRef.current) {
+              videoRef.current.srcObject = stream;
+          }
+          
+          setIsStreaming(true);
+          startPeriodicAnalysis();
+      } catch (err) {
+          console.error(err);
+          setError(`Could not access camera (${mode}).`);
+          toast.error("Camera switch failed. Device may not support this camera.");
+          speak("I cannot switch the camera.");
+          setIsStreaming(false);
+      }
+  }
+
+
   const captureFrame = () => {
     if (!videoRef.current || !canvasRef.current) return null;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     canvas.width = 480; 
     canvas.height = 360;
+    
+    // Apply horizontal flip for 'user' facing mode during capture to match user expectation (optional)
+    if (facingMode === 'user') {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    
+    // Reset canvas transformation
+    if (facingMode === 'user') {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+
     return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.7));
   };
 
@@ -383,6 +483,10 @@ const VisionPage = () => {
     }
   };
 
+  // Determine if we should apply the mirror effect via CSS class
+  const videoClass = `webcam-video ${facingMode === 'user' ? 'mirrored' : ''}`;
+
+
   return (
     <div className="webcam-component">
       <div className="webcam-header">
@@ -405,7 +509,8 @@ const VisionPage = () => {
       <div className="webcam-content">
         <div className="video-section">
           <div className="video-container">
-            <video ref={videoRef} autoPlay playsInline muted className="webcam-video" />
+            {/* Apply the mirrored class based on facingMode state */}
+            <video ref={videoRef} autoPlay playsInline muted className={videoClass} /> 
             <canvas ref={canvasRef} style={{ display: 'none' }} />
             {!isStreaming && (
               <div className="video-placeholder">
@@ -435,6 +540,20 @@ const VisionPage = () => {
                 </motion.button>
               )}
             </div>
+            
+            {/* New Switch Camera Button */}
+            {hasMultipleCameras && (
+                <motion.button 
+                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                    onClick={toggleCamera} 
+                    className="control-button switch-button"
+                    title={`Switch to ${facingMode === 'user' ? 'Rear' : 'Front'} Camera`}
+                >
+                    <RefreshCw size={20} /> 
+                    {facingMode === 'user' ? 'Switch to Rear' : 'Switch to Front'}
+                </motion.button>
+            )}
+            
             <motion.button 
               whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
               onClick={() => setQaMode(!qaMode)} 

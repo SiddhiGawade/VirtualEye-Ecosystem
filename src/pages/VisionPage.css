@@ -774,3 +774,19 @@
   text-align: center;
 }
 
+/* VisionPage.css */
+
+/* ... (other styles) */
+
+/* Add this to mirror the video only when the 'user' (front) camera is active */
+.webcam-video.mirrored {
+  transform: scaleX(-1);
+}
+
+/* Optional: Style the new switch button */
+.control-button.switch-button {
+    background-color: #3f51b5; /* Example: Indigo color */
+    color: white;
+    border: none;
+    /* Add any other consistent styling */
+}
