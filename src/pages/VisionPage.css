@@ -776,8 +776,6 @@
 
 /* VisionPage.css */
 
-/* ... (other styles) */
-
 /* Add this to mirror the video only when the 'user' (front) camera is active */
 .webcam-video.mirrored {
   transform: scaleX(-1);
